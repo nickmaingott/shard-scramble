@@ -76,6 +76,7 @@
         <li>Press <b>Space</b> (phone: DASH button) to dash. Dashing into a rival makes them <b>drop half their shards</b> on the floor — anyone can grab them.</li>
         <li>Dash has a 2-second cooldown (the ring around you). After being hit you flash and are safe for 1.5 seconds.</li>
         <li>Round lasts <b>90 seconds</b>. Most shards at the end wins.</li>
+        <li class="small">Tip: the room creator's device runs the game, so the host should keep this page open and in front.</li>
       </ol>
     </details>
   </div>
@@ -243,7 +244,7 @@ function onHostMsg(msg){
 setInterval(() => {
   if (!isHost) return;
   const now = performance.now();
-  for (const [id, t] of lastSeen) if (id !== myId && now - t > 8000) removePlayer(id);
+  for (const [id, t] of lastSeen) if (id !== myId && now - t > 20000) removePlayer(id);
 }, 1000);
 
 function applyInput(p, msg){
@@ -426,7 +427,7 @@ function onClientMsg(msg){
 // host watchdog
 setInterval(() => {
   if (isHost || !joined) return;
-  if (performance.now() - lastHostMsg > 8000) hostGone();
+  if (performance.now() - lastHostMsg > 20000) hostGone();
 }, 1000);
 let goneShown = false;
 function hostGone(){
@@ -469,6 +470,8 @@ function onPhase(msg){
   }
   if (phase === 'lobby'){ hideOverlay(); show('lobby'); renderLobby(); }
   if (phase === 'over') showResults(msg.results || []);
+  // a player dropped mid-round (e.g. phone app switch) rejoins between rounds
+  if (!isHost && joined && (phase === 'over' || phase === 'lobby') && !roster.some(r=>r.id===myId)) pub('up', {t:'hello', f:myId, name:getName()});
 }
 function showResults(results){
   const top = results[0], tie = results.length>1 && results[1].score === top.score;
