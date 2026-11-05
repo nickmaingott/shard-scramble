@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Shard Scramble</title>
+<meta name="description" content="A real-time multiplayer arena game. Grab shards, dash into rivals to knock their shards loose. Join with a room code from any device.">
+<style>
+  :root{
+    --bg:#0d1020; --panel:#161a33; --panel2:#1f2447; --ink:#eef0ff; --muted:#9aa0c7;
+    --accent:#ffcc33; --accent2:#4fd1ff; --danger:#ff5d73; --ok:#4ade80;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;
+    -webkit-user-select:none;user-select:none;touch-action:none}
+  button,input{font:inherit}
+  .screen{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:16px;overflow:auto;touch-action:auto}
+  .screen.on{display:flex}
+  .card{background:var(--panel);border:1px solid #2b3163;border-radius:18px;padding:22px;width:100%;max-width:460px;
+    box-shadow:0 20px 60px #0008}
+  h1{margin:0 0 4px;font-size:34px;letter-spacing:.5px}
+  h1 span{color:var(--accent)}
+  .sub{color:var(--muted);margin:0 0 18px}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+  input{width:100%;padding:12px 14px;border-radius:10px;border:1px solid #333a75;background:#0f1330;color:var(--ink);font-size:17px;outline:none}
+  input:focus{border-color:var(--accent2)}
+  .row{display:flex;gap:10px;margin-top:12px}
+  .btn{flex:1;padding:13px 14px;border:0;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer;background:var(--panel2);color:var(--ink)}
+  .btn.primary{background:var(--accent);color:#1b1500}
+  .btn.blue{background:var(--accent2);color:#002230}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .err{color:var(--danger);min-height:20px;margin-top:10px;font-size:14px}
+  details{margin-top:16px;background:#11152c;border-radius:10px;padding:10px 14px}
+  summary{cursor:pointer;font-weight:700}
+  ol,ul{margin:8px 0 2px;padding-left:20px;color:#cfd3f5;line-height:1.5;font-size:14px}
+  .code{font-size:44px;font-weight:800;letter-spacing:10px;color:var(--accent);text-align:center;margin:6px 0}
+  .players{list-style:none;padding:0;margin:10px 0}
+  .players li{display:flex;align-items:center;gap:10px;padding:8px 10px;background:#11152c;border-radius:8px;margin-bottom:6px}
+  .dot{width:16px;height:16px;border-radius:50%}
+  .small{font-size:13px;color:var(--muted)}
+  #game{position:fixed;inset:0;display:none}
+  #game.on{display:block}
+  canvas{display:block;width:100%;height:100%}
+  #dashBtn{position:fixed;right:22px;bottom:26px;width:96px;height:96px;border-radius:50%;border:3px solid #fff6;
+    background:#ffcc33cc;color:#1b1500;font-weight:900;font-size:18px;display:none}
+  .touch #dashBtn{display:block}
+  #overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#0009;padding:16px}
+  #overlay.on{display:flex}
+  table{width:100%;border-collapse:collapse;margin:10px 0}
+  td{padding:8px 6px;border-bottom:1px solid #2b3163}
+  td:last-child{text-align:right;font-weight:800;color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- HOME -->
+<section id="home" class="screen on">
+  <div class="card">
+    <h1>Shard <span>Scramble</span></h1>
+    <p class="sub">Real-time arena for 2–8 players. Grab shards. Dash into rivals to knock theirs loose.</p>
+    <label for="name">Your name</label>
+    <input id="name" maxlength="12" placeholder="e.g. Nick" autocomplete="off">
+    <div class="row"><button class="btn primary" id="createBtn">Create room</button></div>
+    <label for="code">Have a room code?</label>
+    <div class="row" style="margin-top:0">
+      <input id="code" maxlength="4" placeholder="ABCD" style="text-transform:uppercase;letter-spacing:6px;text-align:center" autocomplete="off">
+      <button class="btn blue" id="joinBtn" style="flex:0 0 110px">Join</button>
+    </div>
+    <div class="err" id="homeErr"></div>
+    <details open>
+      <summary>How to play</summary>
+      <ol>
+        <li>Move with <b>WASD / arrow keys</b> (phone: drag anywhere on the left side).</li>
+        <li>Touch <b>blue shards</b> for +1 point, rare <b>gold shards</b> for +3.</li>
+        <li>Press <b>Space</b> (phone: DASH button) to dash. Dashing into a rival makes them <b>drop half their shards</b> on the floor — anyone can grab them.</li>
+        <li>Dash has a 2-second cooldown (the ring around you). After being hit you flash and are safe for 1.5 seconds.</li>
+        <li>Round lasts <b>90 seconds</b>. Most shards at the end wins.</li>
+      </ol>
+    </details>
+  </div>
+</section>
+
+<!-- LOBBY -->
+<section id="lobby" class="screen">
+  <div class="card">
+    <div class="small" style="text-align:center">ROOM CODE</div>
+    <div class="code" id="lobbyCode">----</div>
+    <div class="small" style="text-align:center">Friends open this page and enter the code, or use the invite link:</div>
+    <div class="row"><button class="btn" id="copyBtn">Copy invite link</button></div>
+    <ul class="players" id="playerList"></ul>
+    <div class="small" id="lobbyNote"></div>
+    <div class="row">
+      <button class="btn" id="leaveBtn">Leave</button>
+      <button class="btn primary" id="startBtn">Start round</button>
+    </div>
+    <div class="err" id="lobbyErr"></div>
+  </div>
+</section>
+
+<!-- GAME -->
+<div id="game">
+  <canvas id="cv"></canvas>
+  <button id="dashBtn">DASH</button>
+</div>
+
+<div id="overlay"><div class="card" id="overlayCard"></div></div>
+
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+// ---------- constants ----------
+// Realtime relay: a free public MQTT broker over secure WebSockets (works on networks that block WebRTC).
+const BROKER = 'wss://broker.emqx.io:8084/mqtt';
+const TOPIC = 'shardscramble/v1/';
+const W = 1000, H = 640;               // world size
+const PR = 22;                          // player radius
+const SPEED = 270, DASH_SPEED = 760;
+const DASH_TIME = 0.22, DASH_CD = 2.0, INV_TIME = 1.5;
+const ROUND = 90, COUNTDOWN = 3;
+const MAX_PLAYERS = 8, MAX_SHARDS = 16;
+const SEND_MS = 50;                     // client input rate
+const COLORS = ['#ff6b6b','#4fd1ff','#4ade80','#c084fc','#fb923c','#f472b6','#facc15','#2dd4bf'];
+const PILLARS = [{x:250,y:200,r:46},{x:750,y:440,r:46},{x:500,y:320,r:60},{x:780,y:170,r:34},{x:220,y:470,r:34}];
+const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+const $ = id => document.getElementById(id);
+const show = id => { for (const s of document.querySelectorAll('.screen')) s.classList.toggle('on', s.id === id);
+  $('game').classList.toggle('on', id === 'game'); };
+
+// ---------- utils ----------
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const rnd = (a,b) => a + Math.random()*(b-a);
+const rid = () => Math.random().toString(36).slice(2,10);
+const cleanName = s => (s||'').replace(/[^\p{L}\p{N} _.-]/gu,'').trim().slice(0,12) || 'Player';
+function makeCode(){ let c=''; for(let i=0;i<4;i++) c+=ALPHA[Math.floor(Math.random()*ALPHA.length)]; return c; }
+function inviteLink(){ const u = new URL(location.href); u.search = '?room=' + roomCode; u.hash=''; return u.toString(); }
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function parse(buf){ try { const s = buf.toString(); return s ? JSON.parse(s) : null; } catch(e){ return null; } }
+
+// ---------- state ----------
+let mq = null, isHost = false, joined = false, roomCode = '', hostId = null;
+const myId = rid();
+let roster = [];                        // [{id,name,color}]
+let phase = 'lobby';
+let view = null, prevView = null, viewAt = 0, prevAt = 0;
+let effects = [];
+let sim = null;                         // host only
+const lastSeen = new Map();             // host: player id -> ms
+let lastHostMsg = 0;                    // client
+
+// prefill from URL / storage
+const qRoom = new URLSearchParams(location.search).get('room');
+if (qRoom) $('code').value = qRoom.toUpperCase().slice(0,4);
+try { $('name').value = localStorage.getItem('ss-name') || ''; } catch(e){}
+function getName(){
+  const n = cleanName($('name').value);
+  try { localStorage.setItem('ss-name', n); } catch(e){}
+  return n;
+}
+function homeError(msg){ $('homeErr').textContent = msg; $('createBtn').disabled = false; $('joinBtn').disabled = false; }
+
+// ---------- transport ----------
+const tp = s => TOPIC + roomCode + '/' + s;
+function mqConnect(will){
+  return new Promise((res, rej) => {
+    const c = mqtt.connect(BROKER, { clientId: 'ss_' + myId + '_' + rid(), connectTimeout: 10000,
+      reconnectPeriod: 2000, keepalive: 20, clean: true, will });
+    const to = setTimeout(() => { c.end(true); rej(new Error('timeout')); }, 12000);
+    c.once('connect', () => { clearTimeout(to); res(c); });
+    c.on('error', () => {});
+  });
+}
+function pub(sub, msg, opts){ if (mq && mq.connected) mq.publish(tp(sub), msg == null ? '' : JSON.stringify(msg), opts || {qos:0}); }
+
+// ---------- HOST ----------
+async function createRoom(){
+  const name = getName();
+  $('createBtn').disabled = true; $('homeErr').textContent = 'Creating room…';
+  roomCode = makeCode();
+  try {
+    mq = await mqConnect({ topic: tp('meta'), payload: '', retain: true, qos: 1 });
+  } catch(e){ homeError('Could not reach the game server. Check your connection and try again.'); return; }
+  isHost = true; joined = true; hostId = myId;
+  mq.on('message', (topic, buf) => { if (topic === tp('up')) onHostMsg(parse(buf)); });
+  mq.subscribe(tp('up'));
+  const announce = () => pub('meta', {host: myId, at: Date.now()}, {qos:1, retain:true});
+  announce(); setInterval(announce, 10000);
+  mq.on('connect', () => { mq.subscribe(tp('up')); announce(); });   // after auto-reconnect
+  addEventListener('pagehide', () => pub('meta', null, {qos:0, retain:true}));
+  sim = newSim();
+  $('homeErr').textContent = '';
+  addPlayer(myId, name);
+  enterLobby();
+}
+
+function newSim(){ return { players:new Map(), shards:[], nextShard:1, timeLeft:ROUND, countdown:0, spawnT:0 }; }
+
+function addPlayer(id, name){
+  const used = new Set(roster.map(p=>p.color));
+  const color = COLORS.find(c=>!used.has(c)) || COLORS[roster.length % COLORS.length];
+  roster.push({id, name, color});
+  sim.players.set(id, mkPlayer(id, roster.length-1));
+  lastSeen.set(id, performance.now());
+  broadcastRoster();
+}
+function mkPlayer(id, i){
+  const ang = (i / MAX_PLAYERS) * Math.PI*2;
+  const p = { id, x: W/2 + Math.cos(ang)*300, y: H/2 + Math.sin(ang)*230, vx:0, vy:0,
+    ix:0, iy:0, fx:1, fy:0, dashT:0, dashCd:0, inv:0, score:0, dashSeq:0, ack:0 };
+  pushOut(p); return p;
+}
+function removePlayer(id){
+  if (id === myId || !roster.some(p=>p.id===id)) return;
+  roster = roster.filter(p=>p.id!==id);
+  sim.players.delete(id); lastSeen.delete(id);
+  broadcastRoster();
+  if ((phase === 'play' || phase === 'countdown') && roster.length < 2) endRound();
+}
+function onHostMsg(msg){
+  if (!msg || typeof msg.f !== 'string') return;
+  const f = msg.f, known = roster.some(p=>p.id===f);
+  if (msg.t === 'hello'){
+    if (known){ pub('down', {t:'welcome', to:f}, {qos:1}); broadcastRoster(); return; }
+    if (roster.length >= MAX_PLAYERS) return pub('down', {t:'deny', to:f, why:'Room is full (8 players).'}, {qos:1});
+    if (phase === 'play' || phase === 'countdown') return pub('down', {t:'deny', to:f, why:'A round is in progress — try again when it ends.'}, {qos:1});
+    addPlayer(f, cleanName(msg.name));
+    pub('down', {t:'welcome', to:f}, {qos:1});
+    broadcastRoster();
+    return;
+  }
+  if (!known) return;
+  lastSeen.set(f, performance.now());
+  if (msg.t === 'i'){
+    const p = sim.players.get(f); if (!p) return;
+    applyInput(p, msg);
+    if (typeof msg.q === 'number') p.ack = Math.max(p.ack, msg.q);
+  } else if (msg.t === 'bye') removePlayer(f);
+}
+// drop players that went silent
+setInterval(() => {
+  if (!isHost) return;
+  const now = performance.now();
+  for (const [id, t] of lastSeen) if (id !== myId && now - t > 8000) removePlayer(id);
+}, 1000);
+
+function applyInput(p, msg){
+  let x = +msg.x||0, y = +msg.y||0; const m = Math.hypot(x,y); if (m>1){ x/=m; y/=m; }
+  p.ix = x; p.iy = y;
+  if (typeof msg.d === 'number' && msg.d > p.dashSeq){ p.dashSeq = msg.d; tryDash(p); }
+}
+function tryDash(p){
+  if (phase !== 'play' || p.dashCd > 0) return;
+  let dx = p.ix, dy = p.iy; if (Math.hypot(dx,dy) < .2){ dx = p.fx; dy = p.fy; }
+  const m = Math.hypot(dx,dy)||1; p.fx = dx/m; p.fy = dy/m;
+  p.dashT = DASH_TIME; p.dashCd = DASH_CD;
+}
+function broadcast(msg, opts){ pub('down', msg, opts); }
+function broadcastRoster(){ const msg = {t:'roster', roster, phase}; broadcast(msg, {qos:1}); onRoster(msg); }
+
+function startRound(){
+  if (!isHost || roster.length < 2) return;
+  sim.shards = []; sim.timeLeft = ROUND; sim.countdown = COUNTDOWN; sim.spawnT = 0;
+  roster.forEach((r,i) => { const old = sim.players.get(r.id); const p = mkPlayer(r.id, i);
+    if (old){ p.dashSeq = old.dashSeq; p.ack = old.ack; } sim.players.set(r.id, p); });
+  for (let i=0;i<8;i++) spawnShard();
+  setPhase('countdown');
+}
+function setPhase(ph, extra){
+  phase = ph;
+  const msg = Object.assign({t:'phase', phase:ph}, extra||{});
+  broadcast(msg, {qos:1}); onPhase(msg);
+}
+function endRound(){
+  const results = roster.map(r => ({name:r.name, color:r.color, score:(sim.players.get(r.id)||{}).score||0}))
+    .sort((a,b)=>b.score-a.score);
+  setPhase('over', {results});
+}
+
+function spawnShard(x, y, v){
+  for (let tries=0; tries<20; tries++){
+    const sx = x ?? rnd(40, W-40), sy = y ?? rnd(40, H-40);
+    if (x == null && PILLARS.some(o => Math.hypot(o.x-sx,o.y-sy) < o.r+20)) continue;
+    sim.shards.push({id: sim.nextShard++, x:sx, y:sy, v: v ?? (Math.random()<.1 ? 3 : 1)});
+    return;
+  }
+}
+function pushOut(o){
+  o.x = clamp(o.x, PR, W-PR); o.y = clamp(o.y, PR, H-PR);
+  for (const pl of PILLARS){
+    const dx=o.x-pl.x, dy=o.y-pl.y, d=Math.hypot(dx,dy), min=pl.r+PR;
+    if (d < min){ const k=(min-d)/(d||1); o.x+=dx*k; o.y+=dy*k; if (o.dashT>0) o.dashT=0; }
+  }
+}
+// movement shared by host simulation and client prediction
+function movePlayer(p, dt){
+  if (p.dashT > 0){
+    p.dashT -= dt; p.vx = p.fx*DASH_SPEED; p.vy = p.fy*DASH_SPEED;
+  } else {
+    const tx = p.ix*SPEED, ty = p.iy*SPEED, k = Math.min(1, dt*12);
+    p.vx += (tx-p.vx)*k; p.vy += (ty-p.vy)*k;
+    const m = Math.hypot(p.ix,p.iy); if (m > .2){ p.fx=p.ix/m; p.fy=p.iy/m; }
+  }
+  p.x += p.vx*dt; p.y += p.vy*dt;
+  pushOut(p);
+}
+
+function hostStep(dt){
+  if (phase === 'countdown'){ sim.countdown -= dt; if (sim.countdown <= 0) setPhase('play'); }
+  const playing = phase === 'play';
+  if (playing){
+    sim.timeLeft -= dt; sim.spawnT -= dt;
+    const frenzy = sim.timeLeft < 15;
+    if (sim.spawnT <= 0 && sim.shards.length < MAX_SHARDS + (frenzy?8:0)){ spawnShard(); sim.spawnT = frenzy ? 0.3 : 0.6; }
+  }
+  const ps = [...sim.players.values()];
+  for (const p of ps){
+    p.dashCd = Math.max(0, p.dashCd - dt); p.inv = Math.max(0, p.inv - dt);
+    if (!playing){ p.vx = p.vy = 0; continue; }
+    movePlayer(p, dt);
+  }
+  if (!playing) return;
+  for (let i=0;i<ps.length;i++) for (let j=i+1;j<ps.length;j++){
+    const a=ps[i], b=ps[j], dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||.01;
+    if (d >= PR*2) continue;
+    const nx=dx/d, ny=dy/d, ov=(PR*2-d)/2;
+    a.x-=nx*ov; a.y-=ny*ov; b.x+=nx*ov; b.y+=ny*ov;
+    const ad=a.dashT>0, bd=b.dashT>0;
+    if (ad && !bd) hit(a, b, nx, ny);
+    else if (bd && !ad) hit(b, a, -nx, -ny);
+    else if (ad && bd){ a.dashT=b.dashT=0; a.vx=-nx*300; a.vy=-ny*300; b.vx=nx*300; b.vy=ny*300; }
+    pushOut(a); pushOut(b);
+  }
+  for (const p of ps){
+    for (let k=sim.shards.length-1;k>=0;k--){
+      const s = sim.shards[k];
+      if (Math.hypot(s.x-p.x, s.y-p.y) < PR+12){
+        p.score += s.v; sim.shards.splice(k,1);
+        fx({k:'pick', x:Math.round(s.x), y:Math.round(s.y), v:s.v});
+      }
+    }
+  }
+  if (sim.timeLeft <= 0) endRound();
+}
+function hit(att, vic, nx, ny){
+  att.dashT = 0;
+  if (vic.inv > 0) return;
+  vic.inv = INV_TIME; vic.vx = nx*420; vic.vy = ny*420;
+  const lose = vic.score > 0 ? Math.max(1, Math.floor(vic.score/2)) : 0;
+  vic.score -= lose;
+  let left = lose, guard = 0;
+  while (left > 0 && guard++ < 200){
+    const v = left >= 3 && Math.random()<.3 ? 3 : 1;
+    const a = rnd(0, Math.PI*2), r = rnd(55, 110);
+    const sx = clamp(vic.x + Math.cos(a)*r, 20, W-20), sy = clamp(vic.y + Math.sin(a)*r, 20, H-20);
+    if (PILLARS.some(o => Math.hypot(o.x-sx,o.y-sy) < o.r+14)) continue;
+    spawnShard(sx, sy, v); left -= v;
+  }
+  if (left > 0) for (; left > 0; left--) spawnShard(undefined, undefined, 1);
+  fx({k:'hit', x:Math.round(vic.x), y:Math.round(vic.y), n:lose});
+}
+let pendingFx = [];
+function fx(e){ pendingFx.push(e); }
+
+function snapshot(){
+  const p = [];
+  for (const pl of sim.players.values())
+    p.push([pl.id, Math.round(pl.x), Math.round(pl.y), pl.score, pl.dashT>0?1:0, +(pl.inv>0),
+      +(pl.dashCd/DASH_CD).toFixed(2), +pl.fx.toFixed(2), +pl.fy.toFixed(2), pl.ack]);
+  const s = sim.shards.map(s => [s.id, Math.round(s.x), Math.round(s.y), s.v]);
+  return {t:'s', ph: phase, p, s, tl: +Math.max(0, sim.timeLeft).toFixed(1), cd: +Math.max(0, sim.countdown).toFixed(2), fx: pendingFx.splice(0)};
+}
+
+// host loop: fixed 60Hz simulation, 20Hz network while playing (1Hz otherwise)
+let lastTick = performance.now(), acc = 0, netAcc = 0;
+setInterval(() => {
+  if (!isHost || !sim) return;
+  const now = performance.now(); const dt = Math.min(0.25, (now-lastTick)/1000); lastTick = now;
+  const me = sim.players.get(myId);
+  if (me) applyInput(me, {x:input.x, y:input.y, d:input.dashSeq});
+  acc += dt; netAcc += dt;
+  while (acc >= 1/60){ hostStep(1/60); acc -= 1/60; }
+  const active = phase === 'play' || phase === 'countdown';
+  if (netAcc >= (active ? 0.05 : 1)){ netAcc = 0; const snap = snapshot(); broadcast(snap); onSnap(snap); }
+}, 16);
+
+// ---------- CLIENT ----------
+async function joinRoom(){
+  const name = getName();
+  const code = $('code').value.trim().toUpperCase();
+  if (!/^[A-Z]{4}$/.test(code)) { homeError('Enter the 4-letter room code.'); return; }
+  $('joinBtn').disabled = true; $('createBtn').disabled = true; $('homeErr').textContent = 'Connecting…';
+  roomCode = code;
+  try {
+    mq = await mqConnect({ topic: tp('up'), payload: JSON.stringify({t:'bye', f:myId}), qos: 0, retain: false });
+  } catch(e){ homeError('Could not reach the game server. Check your connection and try again.'); return; }
+  let found = false;
+  const hello = () => pub('up', {t:'hello', f:myId, name});
+  mq.on('message', (topic, buf) => {
+    const m = parse(buf);
+    if (topic === tp('meta')){
+      if (!m || !m.host) return;
+      hostId = m.host;
+      if (!found){ found = true; $('homeErr').textContent = 'Room found, joining…'; hello(); }
+    } else if (topic === tp('down')){
+      if (!m || (m.to && m.to !== myId)) return;
+      lastHostMsg = performance.now();
+      onClientMsg(m);
+    }
+  });
+  mq.subscribe([tp('meta'), tp('down')]);
+  mq.on('connect', () => { mq.subscribe([tp('meta'), tp('down')]); if (joined) hello(); });
+  setTimeout(() => { if (!found && !joined){ homeError('No room with code ' + code + '. Check the code and try again.'); leave(); } }, 7000);
+  setTimeout(() => { if (found && !joined){ homeError('The room did not answer. Ask the host to check their connection.'); leave(); } }, 14000);
+}
+function onClientMsg(msg){
+  if (msg.t === 'welcome'){ if (!joined){ joined = true; $('homeErr').textContent=''; enterLobby(); } }
+  else if (msg.t === 'deny'){ homeError(msg.why); leave(); }
+  else if (!joined) return;
+  else if (msg.t === 'roster') onRoster(msg);
+  else if (msg.t === 'phase') onPhase(msg);
+  else if (msg.t === 's'){ if (msg.ph && msg.ph !== phase && (msg.ph === 'play' || msg.ph === 'countdown')) onPhase({phase: msg.ph}); onSnap(msg); }
+}
+// host watchdog
+setInterval(() => {
+  if (isHost || !joined) return;
+  if (performance.now() - lastHostMsg > 8000) hostGone();
+}, 1000);
+let goneShown = false;
+function hostGone(){
+  if (goneShown) return; goneShown = true;
+  showOverlay(`<h2 style="margin-top:0">Lost the host</h2><p class="small">The player who created the room left or lost connection.</p>
+    <div class="row"><button class="btn primary" id="backBtn">Back to start</button></div>`);
+  $('backBtn').onclick = () => { location.href = location.pathname; };
+}
+function leave(){
+  try { if (mq){ if (!isHost && joined) pub('up', {t:'bye', f:myId}); mq.end(); } } catch(e){}
+  mq = null; joined = false;
+}
+
+// ---------- shared UI ----------
+function enterLobby(){
+  $('lobbyCode').textContent = roomCode;
+  show('lobby');
+  try { history.replaceState(null, '', '?room=' + roomCode); } catch(e){}
+  renderLobby();
+}
+function onRoster(msg){
+  roster = msg.roster || [];
+  if (!isHost && joined && !roster.some(r=>r.id===myId)) { pub('up', {t:'hello', f:myId, name:getName()}); }
+  if (phase === 'lobby') renderLobby();
+}
+function renderLobby(){
+  $('playerList').innerHTML = roster.map(r =>
+    `<li><span class="dot" style="background:${r.color}"></span><span>${esc(r.name)}</span>${r.id===myId?'<span class="small">(you)</span>':''}${r.id===hostId?'<span class="small" style="margin-left:auto">host</span>':''}</li>`).join('');
+  $('startBtn').style.display = isHost ? '' : 'none';
+  $('startBtn').disabled = roster.length < 2;
+  $('lobbyNote').textContent = isHost
+    ? (roster.length < 2 ? 'Waiting for at least one more player… share the code or invite link.' : `${roster.length} players ready. Start when everyone is in!`)
+    : 'Waiting for the host to start the round…';
+}
+function onPhase(msg){
+  const prev = phase; phase = msg.phase;
+  if (phase === 'countdown' || phase === 'play'){
+    hideOverlay(); show('game'); resize();
+    if (phase === 'countdown' || prev !== 'countdown') pred.resync = true;
+  }
+  if (phase === 'lobby'){ hideOverlay(); show('lobby'); renderLobby(); }
+  if (phase === 'over') showResults(msg.results || []);
+}
+function showResults(results){
+  const top = results[0], tie = results.length>1 && results[1].score === top.score;
+  const rows = results.map((r,i)=>`<tr><td>${i+1}. <span class="dot" style="display:inline-block;vertical-align:middle;background:${r.color}"></span> ${esc(r.name)}</td><td>${r.score}</td></tr>`).join('');
+  showOverlay(`<h2 style="margin-top:0">${top ? (tie ? 'It’s a tie!' : esc(top.name) + ' wins!') : 'Round over'}</h2>
+    <table>${rows}</table>
+    <div class="row">${isHost
+      ? '<button class="btn" id="toLobby">Lobby</button><button class="btn primary" id="again">Play again</button>'
+      : '<span class="small">Waiting for the host to start the next round…</span>'}</div>`);
+  if (isHost){
+    $('again').onclick = () => { if (roster.length>=2) startRound(); else setPhase('lobby'); };
+    $('toLobby').onclick = () => setPhase('lobby');
+  }
+}
+function showOverlay(html){ $('overlayCard').innerHTML = html; $('overlay').classList.add('on'); }
+function hideOverlay(){ $('overlay').classList.remove('on'); }
+
+function onSnap(s){
+  if (view && s === view) return;
+  prevView = view; prevAt = viewAt; view = s; viewAt = performance.now();
+  for (const e of s.fx || []) effects.push(Object.assign({t:0}, e));
+  if (!isHost) reconcile(s);
+}
+
+$('createBtn').onclick = () => createRoom();
+$('joinBtn').onclick = joinRoom;
+$('code').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom(); });
+$('name').addEventListener('keydown', e => { if (e.key === 'Enter') ($('code').value.trim() ? joinRoom() : createRoom()); });
+$('startBtn').onclick = startRound;
+$('leaveBtn').onclick = () => { if (isHost) pub('meta', null, {qos:0, retain:true}); leave(); setTimeout(() => location.href = location.pathname, 150); };
+$('copyBtn').onclick = async () => {
+  const link = inviteLink();
+  try { await navigator.clipboard.writeText(link); $('copyBtn').textContent = 'Link copied!'; }
+  catch(e){ $('copyBtn').textContent = link; }
+  setTimeout(()=>$('copyBtn').textContent='Copy invite link', 2500);
+};
+
+// ---------- INPUT ----------
+const input = { x:0, y:0, dashSeq:0 };
+const keys = new Set();
+addEventListener('keydown', e => {
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+  if (e.code === 'Space'){ e.preventDefault(); if (!e.repeat) input.dashSeq++; }
+  if (e.code.startsWith('Arrow')) e.preventDefault();
+  keys.add(e.code); updateKeys();
+});
+addEventListener('keyup', e => { keys.delete(e.code); updateKeys(); });
+addEventListener('blur', () => { keys.clear(); updateKeys(); });
+function updateKeys(){
+  if (stick.active) return;
+  let x = 0, y = 0;
+  if (keys.has('ArrowLeft')||keys.has('KeyA')) x--;
+  if (keys.has('ArrowRight')||keys.has('KeyD')) x++;
+  if (keys.has('ArrowUp')||keys.has('KeyW')) y--;
+  if (keys.has('ArrowDown')||keys.has('KeyS')) y++;
+  const m = Math.hypot(x,y)||1; input.x = x/m; input.y = y/m;
+}
+const stick = { active:false, id:null, ox:0, oy:0, cx:0, cy:0 };
+const cv = $('cv');
+cv.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse') return;
+  document.body.classList.add('touch');
+  stick.active = true; stick.id = e.pointerId; stick.ox = stick.cx = e.clientX; stick.oy = stick.cy = e.clientY;
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener('pointermove', e => {
+  if (!stick.active || e.pointerId !== stick.id) return;
+  stick.cx = e.clientX; stick.cy = e.clientY;
+  const dx = stick.cx-stick.ox, dy = stick.cy-stick.oy, m = Math.hypot(dx,dy), R = 60;
+  input.x = m < 6 ? 0 : dx/Math.max(m,R); input.y = m < 6 ? 0 : dy/Math.max(m,R);
+});
+const endStick = e => { if (e.pointerId !== stick.id) return; stick.active=false; input.x=input.y=0; };
+cv.addEventListener('pointerup', endStick); cv.addEventListener('pointercancel', endStick);
+$('dashBtn').addEventListener('pointerdown', e => { e.preventDefault(); input.dashSeq++; });
+if ('ontouchstart' in window) document.body.classList.add('touch');
+
+// ---------- CLIENT PREDICTION ----------
+// The client moves its own player immediately, then gently corrects toward the host's authoritative
+// position (replaying the inputs the host has not processed yet).
+const pred = { me:null, seq:0, hist:[], resync:true, localDash:0, tickDx:0, tickDy:0 };
+let lastSendAt = 0, lastKey = '';
+setInterval(() => {
+  if (isHost || !joined) return;
+  const active = phase === 'play' || phase === 'countdown';
+  const now = performance.now();
+  if (!active && now - lastSendAt < 1000) return;       // lobby keep-alive only
+  const msg = {t:'i', f:myId, x:+input.x.toFixed(2), y:+input.y.toFixed(2), d:input.dashSeq, q:++pred.seq};
+  pub('up', msg); lastSendAt = now;
+  if (pred.me){ pred.hist.push({q: msg.q, dx: pred.tickDx, dy: pred.tickDy}); pred.tickDx = pred.tickDy = 0; }
+  if (pred.hist.length > 120) pred.hist.splice(0, pred.hist.length - 120);
+}, SEND_MS);
+
+function predictStep(dt){
+  const me = pred.me; if (!me || phase !== 'play') return;
+  me.dashCd = Math.max(0, me.dashCd - dt);
+  me.ix = input.x; me.iy = input.y;
+  if (input.dashSeq > pred.localDash){ pred.localDash = input.dashSeq; tryDash(me); }
+  const ox = me.x, oy = me.y;
+  movePlayer(me, dt);
+  pred.tickDx += me.x - ox; pred.tickDy += me.y - oy;
+}
+function reconcile(s){
+  const sp = s.p.find(p => p[0] === myId); if (!sp) return;
+  if (pred.resync || !pred.me){
+    pred.me = { x:sp[1], y:sp[2], vx:0, vy:0, ix:0, iy:0, fx:sp[7]||1, fy:sp[8]||0, dashT:0, dashCd:0 };
+    pred.hist = []; pred.localDash = input.dashSeq; pred.resync = false; return;
+  }
+  const ack = sp[9] || 0;
+  pred.hist = pred.hist.filter(h => h.q > ack);
+  const t = { x: sp[1], y: sp[2] };
+  for (const h of pred.hist){ t.x += h.dx; t.y += h.dy; pushOut(t); }
+  t.x += pred.tickDx; t.y += pred.tickDy;
+  const ex = t.x - pred.me.x, ey = t.y - pred.me.y, e = Math.hypot(ex, ey);
+  if (e > 140){ pred.me.x = t.x; pred.me.y = t.y; }
+  else { pred.me.x += ex*0.2; pred.me.y += ey*0.2; }
+  if (sp[5]) { pred.me.dashT = 0; }          // got hit: stop local dash
+}
+
+// ---------- RENDER ----------
+const ctx = cv.getContext('2d');
+let scale = 1, offX = 0, offY = 0, dpr = 1;
+function resize(){
+  dpr = Math.min(2, devicePixelRatio || 1);
+  cv.width = innerWidth*dpr; cv.height = innerHeight*dpr;
+  const top = 56;
+  scale = Math.min(innerWidth / (W+20), (innerHeight-top) / (H+20));
+  offX = (innerWidth - W*scale)/2; offY = top + (innerHeight - top - H*scale)/2;
+}
+addEventListener('resize', resize);
+
+function renderPlayers(){
+  if (!view) return [];
+  if (isHost) return view.p;
+  const span = viewAt - prevAt || 50, k = clamp((performance.now() - viewAt)/span, 0, 1);
+  const prev = prevView ? new Map(prevView.p.map(p=>[p[0],p])) : new Map();
+  return view.p.map(p => {
+    const out = p.slice();
+    if (p[0] === myId && pred.me && phase === 'play'){
+      out[1] = pred.me.x; out[2] = pred.me.y; out[4] = pred.me.dashT > 0 ? 1 : p[4];
+      out[6] = pred.me.dashCd / DASH_CD; out[7] = pred.me.fx; out[8] = pred.me.fy; return out;
+    }
+    const q = prev.get(p[0]); if (!q) return out;
+    out[1] = q[1] + (p[1]-q[1])*k; out[2] = q[2] + (p[2]-q[2])*k; return out;
+  });
+}
+
+let lastFrame = performance.now();
+function frame(now){
+  const dt = Math.min(.1, (now-lastFrame)/1000); lastFrame = now;
+  requestAnimationFrame(frame);
+  if (!isHost) predictStep(dt);
+  if (!$('game').classList.contains('on')) return;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = '#0d1020'; ctx.fillRect(0,0,innerWidth,innerHeight);
+  if (!view) return;
+  const byId = new Map(roster.map(r=>[r.id,r]));
+
+  // HUD
+  const tl = Math.ceil(view.tl);
+  ctx.fillStyle = '#eef0ff'; ctx.font = '700 22px system-ui'; ctx.textBaseline='middle'; ctx.textAlign='left';
+  ctx.fillText(`⏱ ${Math.floor(tl/60)}:${String(tl%60).padStart(2,'0')}`, 16, 28);
+  if (view.tl < 15 && phase==='play'){ ctx.fillStyle='#ffcc33'; ctx.font='700 14px system-ui'; ctx.fillText('SHARD FRENZY!', 110, 29); }
+  const sorted = [...view.p].sort((a,b)=>b[3]-a[3]);
+  ctx.textAlign='right'; ctx.font='600 15px system-ui';
+  let x = innerWidth - 16;
+  for (const p of sorted.slice(0,6).reverse()){
+    const r = byId.get(p[0]); if (!r) continue;
+    const label = `${r.name} ${p[3]}`; const w = ctx.measureText(label).width;
+    if (x - w < 200) break;
+    ctx.fillStyle = r.color; ctx.fillText(label, x, 28); x -= w + 18;
+  }
+
+  ctx.save(); ctx.translate(offX, offY); ctx.scale(scale, scale);
+  ctx.fillStyle = '#131735'; roundRect(0,0,W,H,18); ctx.fill();
+  ctx.strokeStyle = '#1d2250'; ctx.lineWidth = 1;
+  for (let gx=50; gx<W; gx+=50){ ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,H); ctx.stroke(); }
+  for (let gy=50; gy<H; gy+=50){ ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke(); }
+  ctx.strokeStyle = '#3a4290'; ctx.lineWidth = 4; roundRect(0,0,W,H,18); ctx.stroke();
+  for (const o of PILLARS){
+    ctx.fillStyle = '#262c63'; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,7); ctx.fill();
+    ctx.strokeStyle = '#4b54a8'; ctx.lineWidth = 3; ctx.stroke();
+  }
+  const t = now/1000;
+  for (const s of view.s){
+    const gold = s[3] >= 3, sz = gold ? 13 : 9, bob = Math.sin(t*3 + s[0])*2;
+    ctx.save(); ctx.translate(s[1], s[2]+bob); ctx.rotate(Math.PI/4);
+    ctx.shadowColor = gold ? '#ffcc33' : '#4fd1ff'; ctx.shadowBlur = 14;
+    ctx.fillStyle = gold ? '#ffcc33' : '#4fd1ff'; ctx.fillRect(-sz/2,-sz/2,sz,sz);
+    ctx.restore();
+  }
+  for (const p of renderPlayers()){
+    const r = byId.get(p[0]); if (!r) continue;
+    const [id, px, py, score, dashing, inv, cdFrac, fxv, fyv] = p;
+    if (inv && Math.floor(t*12)%2) ctx.globalAlpha = .35;
+    if (dashing){ ctx.fillStyle = r.color + '55'; for (let i=1;i<=3;i++){ ctx.beginPath(); ctx.arc(px - fxv*i*14, py - fyv*i*14, PR-i*3, 0, 7); ctx.fill(); } }
+    ctx.fillStyle = r.color; ctx.beginPath(); ctx.arc(px,py,PR,0,7); ctx.fill();
+    ctx.strokeStyle = id===myId ? '#fff' : '#0008'; ctx.lineWidth = id===myId ? 3 : 2; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(px+fxv*10, py+fyv*10, 5, 0, 7); ctx.fill();
+    ctx.globalAlpha = 1;
+    if (id === myId && cdFrac > 0){ ctx.strokeStyle = '#ffffff88'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(px,py,PR+7,-Math.PI/2,-Math.PI/2 + Math.PI*2*(1-cdFrac)); ctx.stroke(); }
+    ctx.fillStyle = '#eef0ff'; ctx.font = '600 14px system-ui'; ctx.textAlign='center'; ctx.textBaseline='bottom';
+    ctx.fillText(`${r.name} · ${score}`, px, py - PR - 6);
+  }
+  effects = effects.filter(e => (e.t += dt) < .8);
+  for (const e of effects){
+    const a = 1 - e.t/.8; ctx.globalAlpha = a; ctx.textAlign='center'; ctx.textBaseline='middle';
+    if (e.k === 'pick'){ ctx.fillStyle = e.v>=3?'#ffcc33':'#4fd1ff'; ctx.font='800 18px system-ui'; ctx.fillText('+'+e.v, e.x, e.y - e.t*40); }
+    else if (e.k === 'hit'){ ctx.strokeStyle='#ff5d73'; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(e.x,e.y,PR+e.t*70,0,7); ctx.stroke();
+      if (e.n){ ctx.fillStyle='#ff5d73'; ctx.font='800 20px system-ui'; ctx.fillText('-'+e.n, e.x, e.y - 34 - e.t*30); } }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  if (phase === 'countdown' && view.cd > 0){
+    ctx.fillStyle = '#000a'; ctx.fillRect(0,0,innerWidth,innerHeight);
+    ctx.fillStyle = '#ffcc33'; ctx.font = '900 96px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(Math.ceil(view.cd), innerWidth/2, innerHeight/2);
+    ctx.fillStyle = '#eef0ff'; ctx.font = '600 18px system-ui';
+    ctx.fillText('Grab shards · Dash into rivals to knock theirs loose', innerWidth/2, innerHeight/2 + 80);
+  }
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+requestAnimationFrame(frame);
+
+// small debug hook used for automated testing
+window.__ss = { get phase(){ return phase; }, get roster(){ return roster; }, get view(){ return view; }, input, get me(){ return pred.me; } };
+})();
+</script>
+</body>
+</html>
